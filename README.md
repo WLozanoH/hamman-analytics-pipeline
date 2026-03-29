@@ -26,11 +26,17 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. Run pipeline
+### 4. Create environment file
+
+- Create a `.env` file in the project root based on .env.example
+
+
+### 5. Run pipeline
 
 ```bash
 python src/run_pipeline.py
 ```
+
 ---
 
 ## 📂 Project Structure
@@ -39,13 +45,14 @@ python src/run_pipeline.py
 hamman-analytics-pipeline/
 │
 ├── src/
+│   ├── config.py
 │   └── run_pipeline.py
 │
 ├── data/
 │   ├── raw/
 │   └── processed/
 │
-├── .env
+├── .env.example
 ├── .gitignore
 ├── requirements.txt
 └── README.md
@@ -54,4 +61,5 @@ hamman-analytics-pipeline/
 ## 🔐 Notes
 
 - Sensitive data is not included in the repository.
-- `.env` file is required for configuration.
+- A local `.env` file is required for configuration.
+- Use `.env.example` as a template.
