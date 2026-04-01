@@ -56,14 +56,14 @@ def replace_invalid_names(series):
     series = series.replace(list(invalidos), pd.NA)
     return series
 
-def standarize_column_names(df):
+def standardize_column_names(df):
     """Estandariza nombre de las columnas a minúscula y sin espacios."""
     
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
     return df
 
 
-def clean_especific_column(df, col):
+def clean_specific_column(df, col):
     """Limpia y Estandariza los valores de una columnas específica de tipo texto"""
     
     df[col] = replace_invalid_names(df[col])
@@ -160,6 +160,70 @@ def keep_unique_match_keys(clientes):
     return clientes_unicos
 
 
+# =========================================================
+# LIMPIEZA DIARIO
+# =========================================================
+def remove_empty_rows(df):
+    """Remover filas completamente vacías"""
+    
+    df = df.dropna(how="all")
+    
+    return df
+
+
+def select_columns(df):
+    """Selecciona las primeras 10 columnas relevantes del archivo diario."""
+    
+    df = df.iloc[:,:10].copy()
+    
+    return df
+
+
+def normalize_generic_names(df):
+    """
+    Estandariza nombres genéricos NIÑOS Y NIÑAS.
+    Primero limpia, luego homologa.
+    """
+    
+    mask_niños = df["nombre"].str.startswith("NIÑO", na=False)
+    mask_niñas = df["nombre"].str.startswith("NIÑA", na=False)
+    
+    df.loc[mask_niños, "nombre"] = "NIÑOS"
+    df.loc[mask_niñas, "nombre"] = "NIÑAS"
+    
+    df["nombre"] = df["nombre"].replace({
+    "BRANDEA TU MARCA": pd.NA,
+    "GREATS GROUP": pd.NA
+    })
+
+    return df
+
+
+def clean_dates(df):
+    """
+    Limpia y estandariza la columna fecha.
+    
+        - Convierte valores a datetime usando formato day-first (dd/mm/yyyy).
+        - Los valores no válidos se convierten a NaT.
+        - Rellena automáticamente las fechas que faltan usando el valor superior.
+    """
+    
+    df["fecha"] = pd.to_datetime(df["fecha"], errors= "coerce", dayfirst=True)
+    df["fecha"] = df["fecha"].ffill()
+    
+    return df
+
+
+def create_extract_match_key_diario(diario):
+    """
+    Extrae solo el primer nombre y primer apellido
+    """
+    diario["nombre_simple"] = diario["nombre"].apply(extract_first_name_first_surname)
+    
+    return diario   
+
+
+
 def run_etl():                                     
     """Ejecuta la fase Extract del pipeline ETL."""
     logging.info("Iniciando ETL")
@@ -169,15 +233,28 @@ def run_etl():
     # LIMPIEZA CLIENTES
     logging.info("Iniciando limpieza de clientes")
     
-    clientes = standarize_column_names(clientes) 
-    clientes = clean_especific_column(clientes, "nombre_y_apellido")
+    clientes = standardize_column_names(clientes) 
+    clientes = clean_specific_column(clientes, "nombre_y_apellido")
     clientes = clean_dni_column(clientes, "dni")
     clientes = remove_duplicate_clients(clientes)
     clientes = create_extract_match_key_clientes(clientes)
     logging.info("Iniciando Extracción de claves únicas en nombre_simple")
-    clientes_clean = keep_unique_match_keys(clientes)
+    clientes_unicos = keep_unique_match_keys(clientes)
     
     logging.info("Limpieza de clientes completada correctamente")
+    
+    # LIMPIEZA DIARIO
+    logging.info("Iniciando fase clean transacciones")
+    
+    diario = standardize_column_names(diario)
+    diario = remove_empty_rows(diario)
+    diario = select_columns(diario)
+    diario = clean_specific_column(diario, "nombre")
+    diario = normalize_generic_names(diario)
+    diario = clean_dates(diario)
+    diario = create_extract_match_key_diario(diario)
+
+    logging.info("Fase clean transacciones completada correctamente.")
     
 if __name__ == "__main__":
     run_etl()
