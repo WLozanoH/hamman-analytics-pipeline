@@ -1,6 +1,6 @@
 import pandas as pd
 import logging
-from config import FILE_PATH                                
+from config import FILE_PATH                              
 
 # =========================================================
 # CONFIGURACIÓN
@@ -224,6 +224,157 @@ def create_extract_match_key_diario(diario):
 
 
 
+# =========================================================
+# MERGE POR CLAVE SEGURA
+# =========================================================
+
+def merge_clients_exact(df, clientes_unicos):
+    """
+    Merge exacto y conservador por nombre_simple.
+    Solo son claves únicas en la base de clientes.
+    """
+    
+    df = df.merge(
+        clientes_unicos,
+        on="nombre_simple",
+        how="left",
+        suffixes=("", "_cliente")
+    )
+    return df
+    
+
+# =========================================================
+# COMPLETAR DNI Y NOMBRE
+# =========================================================
+
+def build_final_dni(df):
+    """
+    Prioridad:
+    1. dni_cliente del merge
+    2. dni original
+    """
+    
+    df["dni_cliente"] = df["dni_cliente"].fillna(df["dni"])
+
+    df["dni_cliente"] = (
+        df["dni_cliente"]
+        .astype("string").str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+        .str.extract(r"(\d+)", expand=False)
+    )
+
+    return df
+    
+    
+def standardize_invalid_dni(df):
+    """Estandarizar DNIs inválidos.
+    - Condiciones:
+        - Que no haya valores nulos.
+        - tamaño menor a 8 caracteres.
+        - solo aplicable a dni_genéricos.
+    """
+    
+    dni_genericos = {"123", "234", "1212"}
+    
+    mask = (
+        df["dni_cliente"].notna() &
+        (df["dni_cliente"].str.len() < 8) &
+        (~df["dni_cliente"].isin(dni_genericos))
+    )
+
+    df.loc[mask, "dni_cliente"] = pd.NA
+
+    return df
+
+
+def fill_name_from_exact_match(df):
+    """Completa la columna nombre usando nombre_y_apellido del merge"""
+    
+    df["nombre"] = df["nombre"].fillna(df["nombre_y_apellido"])
+    
+    return df
+
+
+def fill_name_from_dni(df, clientes):
+    """Recupera el nombre vacío desde la tabla de clientes usando DNI"""
+    
+    clientes_clean = (
+        clientes[["dni", "nombre_y_apellido"]]
+        .dropna(subset=["dni"])
+        .drop_duplicates(subset="dni")
+    )
+    mapa = dict(zip(clientes_clean["dni"], clientes_clean["nombre_y_apellido"]))
+    mask = df["nombre"].isna() & df["dni_cliente"].notna()
+    df.loc[mask, "nombre"] = df.loc[mask, "dni_cliente"].map(mapa)
+    
+    return df
+
+
+def fill_phone_from_dni(df, clientes):
+
+    clientes_clean = (
+        clientes[["dni", "celular"]]
+        .dropna(subset=["dni"])
+        .drop_duplicates(subset="dni")
+    )
+
+    mapa = dict(zip(clientes_clean["dni"], clientes_clean["celular"]))
+
+    df["celular"] = df["celular"].fillna(df["dni_cliente"].map(mapa))
+
+    return df
+
+
+def fill_names_by_dni_group(df):
+    """Rellena nombres faltantes usando agrupación por DNI."""
+    df["nombre"] = (
+        df.groupby("dni_cliente")["nombre"]
+        .transform(lambda x: x.ffill().bfill())
+    )
+
+    return df
+
+
+def assign_generic_names_by_dni(df):
+    """Asigna nombres genéricos a DNIs especiales."""
+
+    df.loc[df["dni_cliente"] == "123", "nombre"] = "NIÑOS"
+    df.loc[df["dni_cliente"] == "234", "nombre"] = "NIÑAS"
+    df.loc[df["dni_cliente"] == "1212", "nombre"] = "ACOMPAÑANTE"
+
+    return df
+
+
+def fill_unknown_names(df):
+    """Asigna nombre desconocido a registros sin nombre."""
+
+    df["nombre"] = df["nombre"].fillna("DESCONOCIDO")
+
+    return df
+
+
+def correction_final_dni(df):
+    """
+    - Asegurarse que no tenga espacios adicionales.
+    - Extraer solo valores numéricos
+    - Completa valores nulos por 999999999
+    - Asegurarse que sea entero
+    """
+    df["dni_cliente"] = (
+        df["dni_cliente"]
+        .astype("string")
+        .str.strip()
+        .str.extract(r"(\d+)", expand=False)
+    )
+    
+    df["dni_cliente"] = df["dni_cliente"].fillna("999999999")
+    
+    # convertir a entero para Power BI
+    df["dni_cliente"] = df["dni_cliente"].astype("int64")
+    
+    return df
+
+
 def run_etl():                                     
     """Ejecuta la fase Extract del pipeline ETL."""
     logging.info("Iniciando ETL")
@@ -256,5 +407,24 @@ def run_etl():
 
     logging.info("Fase clean transacciones completada correctamente.")
     
+    # MERGE POR CLAVE SEGURA
+    logging.info("Iniciando fase merge y matching")
+    
+    diario = merge_clients_exact(diario, clientes_unicos)
+    diario = build_final_dni(diario)
+    diario = standardize_invalid_dni(diario)
+    diario = fill_name_from_exact_match(diario)
+    diario = fill_name_from_dni(diario, clientes)
+    diario = fill_phone_from_dni(diario, clientes)
+    diario = fill_names_by_dni_group(diario)
+    diario = assign_generic_names_by_dni(diario)
+    diario = fill_unknown_names(diario)
+    diario = correction_final_dni(diario)
+    
+    logging.info("Fase Merge y matching completada correctamente")
+    
+    
+    
+
 if __name__ == "__main__":
     run_etl()
