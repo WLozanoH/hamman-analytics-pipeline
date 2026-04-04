@@ -369,32 +369,392 @@ def correction_final_dni(df):
     
     df["dni_cliente"] = df["dni_cliente"].fillna("999999999")
     
-    # convertir a entero para Power BI
+    return df
+
+
+def recover_valid_dni(df):
+    """
+    Recupera DNIs válidos desde la columna original 'dni'
+    cuando 'dni_cliente' quedó como fallback (999999999).
+    """
+    
+    dni_clean = (
+        df["dni"]
+        .astype("string")
+        .str.strip()
+        .str.extract(r"(\d+)", expand=False)
+    )
+
+    mask = (
+        (dni_clean.str.len() == 8) &
+        (df["dni_cliente"] == "999999999")
+    )
+
+    df.loc[mask, "dni_cliente"] = dni_clean[mask]
+
+    return df
+
+
+def finalize_dni(df):
+    """
+    Completa DNIs faltantes con valor fallback
+    y convierte la columna a entero.
+    """
+    
+    df["dni_cliente"] = df["dni_cliente"].fillna("999999999")
     df["dni_cliente"] = df["dni_cliente"].astype("int64")
+
+    return df
+
+
+
+# =========================================================
+# LIMPIEZA FINANCIERA
+# =========================================================
+
+def clean_total(df):
+    """Convierte totales a valores numéricos."""
+
+    df["total"] = pd.to_numeric(df["s/._total"], errors="coerce")
+
+    return df
+
+
+def fill_total_zero(df):
+    """Reemplaza totales nulos por cero."""
+
+    df["total"] = df["total"].fillna(0)
+
+    return df
+
+
+# =========================================================
+# MÉTODOS DE PAGO
+# =========================================================
+
+def clean_payment_method(df):
+    """Normaliza métodos de pago."""
+
+    df["metodo_de_pago"] = (
+        df["metodo_de_pago"]
+        .astype("string")
+        .str.upper()
+        .str.strip())
+
+    pagos = {
+        "TC": "TARJETA",
+        "YAPE": "YAPE",
+        "EFECTIVO": "EFECTIVO",
+        "-": "OTRO",
+        "TARJETA": "TARJETA",
+        "T": "TARJETA",
+        "E": "EFECTIVO",
+        "QR": "QR",
+        "TCÇ": "TARJETA",
+        "EFECTIVO 100 Y VUELTO POR YAPE 40": "EFECTIVO",
+        "YA": "YAPE",
+        "NAN": "OTRO",
+        "<NA>": "OTRO"
+    }
+
+    df["metodo_de_pago"] = df["metodo_de_pago"].replace(pagos) 
+    df["metodo_de_pago"] = df["metodo_de_pago"].fillna("OTRO")
     
     return df
 
 
+def classify_giftcard_membership(df):
+    """
+    Clasifica pagos como membresía cuando el total 
+    es igual a cero y método de pago es 'OTRO'.
+    """
+    mask = (df["total"] == 0) & (df["metodo_de_pago"] == "OTRO")
+    df.loc[mask, "metodo_de_pago"] = "MEMBRESIA / GIFT CARD"
+
+    return df
+
+
+# =========================================================
+# SERVICIOS
+# =========================================================
+
+def fix_service_typos(df):
+    """
+    Corrige errores tipográficos en servicios.
+    """
+    df["servicios"] = (
+        df["servicios"]
+        .astype("string")
+        .str.upper()
+        .str.strip()
+        .replace({
+            r"\bNAHAM\b": "NAJAH",
+            r"\bNAJAM\b": "NAJAH",
+            r"\bNAHAJ\b": "NAJAH"
+        }, regex=True)
+    )
+
+    return df
+
+
+def clean_servicios(df):
+    """Normaliza la columna descripción."""
+
+    df["descripcion"] = df["servicios"].astype(str).str.strip().str.upper()
+
+    def clasificar_servicio(texto):
+
+        if pd.isna(texto):
+            return "OTRO"
+
+        if "SALAM" in texto:
+            return "SALAM HAMMAN"
+
+        if "FALAK" in texto:
+            return "FALAK HAMMAN"
+
+        if "NAJAH" in texto:
+            return "NAJAH HAMMAN"
+
+        if "CIRCUITO" in texto:
+            return "CIRCUITO HAMMAN"
+
+        if "MASAJE" in texto:
+            return "MASAJES"
+
+        return "OTRO"
+
+    df["servicios"] = df["descripcion"].apply(clasificar_servicio)
+
+    return df
+
+
+def clean_descripcion(df):
+    """Estandarizar la descripción de servicios."""
+    
+    df["descripcion"] = df["descripcion"].str.strip().str.upper()
+    
+    df["descripcion"] = df["descripcion"].replace({
+        "CIRCUITO HAMMAMM": "CIRCUITO HAMMAM",
+        ".": pd.NA,
+        "-": pd.NA,
+        "NAN":pd.NA,
+        "CIRCUITO HAMMMAM": "CIRCUITO HAMMAM",
+        "RELAJAN TE": "RELAJANTE"   
+    })
+    
+    
+    def clasificar_descripcion(texto):
+        """
+        Clasificación estandarizada de la descripción según servicios.
+        """
+        
+        if pd.isna(texto):
+            return "OTROS SERVICIOS"
+        
+        texto = str(texto)
+        
+        if "CIRCUITO HAMMAM" in texto:
+            return "CIRCUITO HAMMAM"
+        
+        if "CIRCUITO HAMMMAM 60" in texto:
+            return "CIRCUITO HAMMAM"    
+        
+        if "IND" in texto:
+            return "INDIVIDUAL"
+        
+        if "DUO" in texto:
+            return "DUO"
+    
+        if "PISCINA" in texto:
+            return "SOLO PISCINA"
+        
+        if "RELAJANTE" in texto or "RELAJANTES" in texto:
+            return "MASAJES RELAJANTES"
+        
+        if "DESCONTRACTURANTE" in texto:
+            return "MASAJES DESCONTRACTURANTES"
+        
+        if "MIXTO" in texto:
+            return "MIXTO"
+        
+        if "EXFOLIANTE" in texto:
+            return "MASAJES EXFOLIANTES"
+        
+        if "RESERVA" in texto:
+            return "RESERVA"
+        
+        if "MASAJES" in texto or "MASAJE" in texto:
+            return "SOLO MASAJES"
+        
+        if "SALAM" in texto:
+            return "SALAM HAMMAN"
+        
+        if "FALAK" in texto:
+            return "FALAK HAMMAN"
+        
+        return "OTROS SERVICIOS"
+    
+    df["descripcion"] = df["descripcion"].apply(clasificar_descripcion)
+    
+    return df
+
+
+# =========================================================
+# INFERIR DESCRIPCION POR PRECIO
+# =========================================================
+
+def infer_description_from_price(df):
+    """
+    Clasifica INDIVIDUAL o DUO para SALAM y FALAK
+    usando el precio del servicio.
+    """
+
+    # SALAM HAMMAN
+    df.loc[
+        (df["servicios"] == "SALAM HAMMAN") &
+        (df["total"] >= 220),
+        "descripcion"
+    ] = "DUO"
+
+    df.loc[
+        (df["servicios"] == "SALAM HAMMAN") &
+        (df["total"] >= 120) &
+        (df["total"] < 220),
+        "descripcion"
+    ] = "INDIVIDUAL"
+
+    # FALAK HAMMAN
+    df.loc[
+        (df["servicios"] == "FALAK HAMMAN") &
+        (df["total"] >= 240),
+        "descripcion"
+    ] = "DUO"
+
+    df.loc[
+        (df["servicios"] == "FALAK HAMMAN") &
+        (df["total"] >= 130) &
+        (df["total"] < 240),
+        "descripcion"
+    ] = "INDIVIDUAL"
+
+    return df
+
+
+# =========================================================
+# GENERO
+# =========================================================
+
+def generate_gender(df):
+    """
+    Asigna género usando casillero y nombres.
+    """
+    df["numero_de_casillero"] = (
+        df["numero_de_casillero"]
+        .astype("string")
+        .str.strip()
+        .replace(r"-", pd.NA)
+    )
+
+    df["genero"] = "DESCONOCIDO"
+
+    df.loc[df["numero_de_casillero"].str.startswith("D", na=False), "genero"] = "FEMENINO"
+    df.loc[df["numero_de_casillero"].str.startswith("V", na=False), "genero"] = "MASCULINO"
+    
+    df.loc[df["nombre"].str.contains("NIÑOS", na = False), "genero"] = "MASCULINO"
+    df.loc[df["nombre"].str.contains("NIÑAS", na = False), "genero"] = "FEMENINO"
+    df.loc[df["nombre"].str.contains("ACOMPAÑANTE", na = False), "genero"] = "FEMENINO"
+    
+    return df
+
+
+# ==========================
+# Inferior Genero por nombre
+# ==========================
+
+def extract_first_name(df):
+    """EXTRAER PRIMER NOMBRE."""
+
+    df["primer_nombre"] = df["nombre"].str.split().str[0]
+
+    return df
+
+
+def infer_gender_from_name(df):
+    """
+    Usa un diccionario con nombres varios H/M para inferior el género.
+    """
+
+    male_names = {
+        "PEDRO","KEVIN","VICTOR","JAIR","JOSE","LUIS","CARLOS",
+        "JUAN","DIEGO","MARIO","EDGAR","JAIRO", "JEAN", "MATTHEW",
+        "ULISES", "OLIVER", "MACLEONI", "ELIAS", "CRISTHIAN", "DENYS",
+        "HECTOR", "LEONARDO", "TEODORO", "BRIAN", "CESAR", "ENRIQUE", "IVAN",
+        "RODOLFO", "HUGO", "MIGUEL", "HERON", "IZEL", "VLADIMIR"
+        
+         
+    }
+
+    female_names = {
+        "JULIANA","DANIELA","MARITA","MIA","KITZYA","MELANY",
+        "MARIA","ANA","ROSA","LUISA","CARMEN", "KATHIA", "FRANCIS",
+        "CLAUDIA", "MAGALY", "STEPHANIE", "MARJORIE", "LOLA", 
+        "HERSI", "CHRISTINA", "JULIA", "MARIELY", "HELEN", 
+        "MADELEY", "JANELA", "IVANIA", "ARIANA", "GRECIA",
+        "ANGELICA", "GUELLY", "ANITA" , "LISET", "MARISELY", "INES",
+        "ISAURA", "KAREN", "FABIANA", "MARICIELO", "DAMLI",
+        "JESSICA", "KEILI", "MILI", "SHIRLEY", "RITA", "DOMINGA",
+        "CAROLINA", "RUBY", "MARISELLA", "CINTYA", "LULLI", "SARA",
+        "DOMENICA", "STEFANNIA", "KATERIN", "VERONICA", "VANESA", "SONIA",
+        "KATHERINE", "ANTONIA", "ANGIE", 
+    }
+
+    mask_otro = df["genero"] == "DESCONOCIDO"
+
+    df.loc[mask_otro & df["primer_nombre"].isin(male_names), "genero"] = "MASCULINO"
+    df.loc[mask_otro & df["primer_nombre"].isin(female_names), "genero"] = "FEMENINO"
+
+    return df
+
+
+
+
+
+
+# =========================================================
+# PIPELINE COMPLETO
+# =========================================================
+
 def run_etl():                                     
     """Ejecuta la fase Extract del pipeline ETL."""
+    
     logging.info("Iniciando ETL")
+    
+    # ================================
+    # EXTRACT
+    # ================================
+    
     clientes, diario = extract_data()
     logging.info("Fase Extract completada correctamente")
     
-    # LIMPIEZA CLIENTES
-    logging.info("Iniciando limpieza de clientes")
+    # ================================
+    # CLEAN CLIENTES
+    # ================================
+    logging.info("Iniciando fase clean clientes")
     
     clientes = standardize_column_names(clientes) 
     clientes = clean_specific_column(clientes, "nombre_y_apellido")
     clientes = clean_dni_column(clientes, "dni")
     clientes = remove_duplicate_clients(clientes)
     clientes = create_extract_match_key_clientes(clientes)
-    logging.info("Iniciando Extracción de claves únicas en nombre_simple")
+    
     clientes_unicos = keep_unique_match_keys(clientes)
     
-    logging.info("Limpieza de clientes completada correctamente")
+    logging.info("Fase clean clientes completada correctamente")
     
-    # LIMPIEZA DIARIO
+    # ================================
+    # CLEAN TRANSACCIONES
+    # ================================
     logging.info("Iniciando fase clean transacciones")
     
     diario = standardize_column_names(diario)
@@ -407,21 +767,59 @@ def run_etl():
 
     logging.info("Fase clean transacciones completada correctamente.")
     
-    # MERGE POR CLAVE SEGURA
+    # ================================
+    # MERGE & MATCHING
+    # ================================
     logging.info("Iniciando fase merge y matching")
     
     diario = merge_clients_exact(diario, clientes_unicos)
+    
+    # ---- DNI
     diario = build_final_dni(diario)
     diario = standardize_invalid_dni(diario)
+    diario = correction_final_dni(diario)
+    diario = recover_valid_dni(diario)
+    diario = finalize_dni(diario)
+    
+    # ---- Nombre y celular
     diario = fill_name_from_exact_match(diario)
     diario = fill_name_from_dni(diario, clientes)
     diario = fill_phone_from_dni(diario, clientes)
     diario = fill_names_by_dni_group(diario)
+    
+    # ---- Reglas finales de nombre
     diario = assign_generic_names_by_dni(diario)
     diario = fill_unknown_names(diario)
-    diario = correction_final_dni(diario)
+
+    logging.info("Fase merge y matching completada correctamente")
     
-    logging.info("Fase Merge y matching completada correctamente")
+# ================================
+# REGLAS DE NEGOCIO
+# ================================
+    logging.info("Iniciando fase reglas de negocio")
+    
+# ---- Total
+    diario = clean_total(diario)
+    diario = fill_total_zero(diario)
+    
+# ---- Métodos de pago   
+    diario = clean_payment_method(diario)
+    diario = classify_giftcard_membership(diario) 
+    
+# ---- Servicios
+    diario = fix_service_typos(diario)
+    diario = clean_servicios(diario)
+    diario = clean_descripcion(diario)
+    diario = infer_description_from_price(diario)
+    
+# ---- Género
+    diario = generate_gender(diario)
+    diario = extract_first_name(diario)
+    diario = infer_gender_from_name(diario)
+
+    logging.info("Fase Reglas de negocio completada correctamente.")
+    
+    
     
     
     
