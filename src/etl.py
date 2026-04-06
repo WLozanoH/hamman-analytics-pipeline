@@ -1,6 +1,6 @@
 import pandas as pd
 import logging
-from config import FILE_PATH                              
+from config import FILE_PATH, OUTPUT_PATH                              
 
 # =========================================================
 # CONFIGURACIÓN
@@ -718,7 +718,40 @@ def infer_gender_from_name(df):
 
 
 
+# =========================================================
+# VALIDACIÓN FINAL
+# =========================================================
 
+def build_final_dataset(df):
+    """Selecciona columnas finales del dataset."""
+    
+    df_final = df[
+        [
+            "fecha",
+            "nombre",
+            "dni_cliente",
+            "genero",
+            "servicios",
+            "descripcion",
+            "metodo_de_pago",
+            "total"
+        ]
+    ].copy()
+    
+    df_final = df_final.rename(columns={"dni_cliente": "dni"})
+    
+    return df_final
+
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+
+def load_data(df_final):
+    """Exporta dataset limpio."""
+
+    logging.info("Exportando dataset limpio")
+    df_final.to_csv(OUTPUT_PATH, index=False)
 
 
 # =========================================================
@@ -793,35 +826,44 @@ def run_etl():
 
     logging.info("Fase merge y matching completada correctamente")
     
-# ================================
-# REGLAS DE NEGOCIO
-# ================================
+    # ================================
+    # REGLAS DE NEGOCIO
+    # ================================
     logging.info("Iniciando fase reglas de negocio")
     
-# ---- Total
+    # ---- Total
     diario = clean_total(diario)
     diario = fill_total_zero(diario)
     
-# ---- Métodos de pago   
+    # ---- Métodos de pago   
     diario = clean_payment_method(diario)
     diario = classify_giftcard_membership(diario) 
-    
-# ---- Servicios
+        
+    # ---- Servicios
     diario = fix_service_typos(diario)
     diario = clean_servicios(diario)
     diario = clean_descripcion(diario)
     diario = infer_description_from_price(diario)
     
-# ---- Género
+    # ---- Género
     diario = generate_gender(diario)
     diario = extract_first_name(diario)
     diario = infer_gender_from_name(diario)
 
     logging.info("Fase Reglas de negocio completada correctamente.")
     
+    # ================================
+    # DATASET FINAL & LOAD
+    # ================================  
+    logging.info("Iniciando fase Validación y carga de datos")
     
+    # ---- Columnas seleccionadas
+    diario = build_final_dataset(diario)
     
+    # ---- Load clean dataset
+    load_data(diario)
     
+    logging.info("Fase validación y carga completada correctamente")
     
 
 if __name__ == "__main__":
