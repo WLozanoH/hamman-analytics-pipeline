@@ -350,6 +350,29 @@ def assign_generic_names_by_dni(df):
     return df
 
 
+def clear_generic_names_without_special_dni(df):
+    """
+    Si el DNI final es desconocido (999999999), no se deben conservar
+    nombres genéricos heredados del diario como NIÑOS, NIÑAS o ACOMPAÑANTE.
+    En esos casos se fuerza a nulo para que luego pase a DESCONOCIDO.
+    
+    Si el registro ya tiene un nombre real, no se sobreescribe.
+    """
+
+    dni_key = df["dni_cliente"].astype("string").str.strip()
+
+    genericos = {"NIÑOS", "NIÑAS", "ACOMPAÑANTE", "DESCONOCIDO"}
+
+    mask = (
+        (dni_key == "999999999")
+        & (df["nombre"].astype("string").str.strip().isin(genericos))
+    )
+
+    df.loc[mask, "nombre"] = pd.NA
+
+    return df
+
+
 def fill_unknown_names(df):
     """Asigna nombre desconocido a registros sin nombre."""
 
@@ -862,6 +885,7 @@ def run_etl():
     
     # ---- Reglas finales de nombre
     diario = assign_generic_names_by_dni(diario)
+    diario = clear_generic_names_without_special_dni(diario)
     diario = fill_unknown_names(diario)
 
     logging.info("Fase merge y matching completada correctamente")
