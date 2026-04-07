@@ -340,10 +340,12 @@ def fill_names_by_dni_group(df):
 
 def assign_generic_names_by_dni(df):
     """Asigna nombres genéricos a DNIs especiales."""
+    
+    dni_key = df["dni_cliente"].astype("string").str.strip()
 
-    df.loc[df["dni_cliente"] == "123", "nombre"] = "NIÑOS"
-    df.loc[df["dni_cliente"] == "234", "nombre"] = "NIÑAS"
-    df.loc[df["dni_cliente"] == "1212", "nombre"] = "ACOMPAÑANTE"
+    df.loc[dni_key == "123", "nombre"] = "NIÑOS"
+    df.loc[dni_key == "234", "nombre"] = "NIÑAS"
+    df.loc[dni_key == "1212", "nombre"] = "ACOMPAÑANTE"
 
     return df
 
@@ -400,12 +402,40 @@ def recover_valid_dni(df):
 
 def finalize_dni(df):
     """
-    Completa DNIs faltantes con valor fallback
-    y convierte la columna a entero.
+    Valida y estandariza la versión final del DNI:
+    - conserva DNIs especiales: 123, 234, 1212
+    - conserva fallback: 999999999
+    - un DNI normal válido debe:
+        * tener exactamente 8 dígitos
+        * no comenzar con 0
+    - todo lo demás pasa a 999999999
     """
-    
-    df["dni_cliente"] = df["dni_cliente"].fillna("999999999")
-    df["dni_cliente"] = df["dni_cliente"].astype("int64")
+
+    dni_key = (
+        df["dni_cliente"]
+        .astype("string")
+        .str.strip()
+        .str.extract(r"(\d+)", expand=False)
+    )
+
+    dni_especiales = {"123", "234", "1212"}
+    dni_fallback = "999999999"
+
+    mask_especial = dni_key.isin(dni_especiales)
+    mask_fallback = dni_key.eq(dni_fallback)
+
+    mask_valido_normal = (
+        dni_key.notna()
+        & (dni_key.str.len() == 8)
+        & (~dni_key.str.startswith("0", na=False))
+    )
+
+    dni_key = dni_key.where(
+        mask_especial | mask_fallback | mask_valido_normal,
+        dni_fallback
+    )
+
+    df["dni_cliente"] = dni_key
 
     return df
 
@@ -650,7 +680,7 @@ def infer_description_from_price(df):
 
 def generate_gender(df):
     """
-    Asigna género usando casillero y nombres.
+    Asigna género usando casillero, nombres y DNIs especiales.
     """
     df["numero_de_casillero"] = (
         df["numero_de_casillero"]
@@ -667,6 +697,13 @@ def generate_gender(df):
     df.loc[df["nombre"].str.contains("NIÑOS", na = False), "genero"] = "MASCULINO"
     df.loc[df["nombre"].str.contains("NIÑAS", na = False), "genero"] = "FEMENINO"
     df.loc[df["nombre"].str.contains("ACOMPAÑANTE", na = False), "genero"] = "FEMENINO"
+    
+    # Reglas fijas por DNI especial
+    dni_key = df["dni_cliente"].astype("string").str.strip()
+    
+    df.loc[dni_key == "123", "genero"] = "MASCULINO"
+    df.loc[dni_key == "234", "genero"] = "FEMENINO"
+    df.loc[dni_key == "1212", "genero"] = "FEMENINO"
     
     return df
 
