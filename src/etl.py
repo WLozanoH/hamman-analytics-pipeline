@@ -235,7 +235,7 @@ def merge_clients_exact(df, clientes_unicos):
     """
     
     df = df.merge(
-        clientes_unicos,
+        clientes_unicos[["nombre_simple", "nombre_y_apellido", "dni", "celular"]],
         on="nombre_simple",
         how="left",
         suffixes=("", "_cliente")
@@ -288,10 +288,13 @@ def standardize_invalid_dni(df):
 
 
 def fill_name_from_exact_match(df):
-    """Completa la columna nombre usando nombre_y_apellido del merge"""
-    
-    df["nombre"] = df["nombre"].fillna(df["nombre_y_apellido"])
-    
+    """
+    Si hubo match exacto por nombre_simple, usa el nombre canónico
+    de la base de clientes para estandarizar variantes.
+    """
+    mask_match = df["nombre_y_apellido"].notna()
+    df.loc[mask_match, "nombre"] = df.loc[mask_match, "nombre_y_apellido"]
+
     return df
 
 
